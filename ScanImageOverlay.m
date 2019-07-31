@@ -2,7 +2,7 @@ function ScanImageOverlay(filenameRatan, filenameImage)
 %%
 % RATAN-600
 scan = fitsread(filenameRatan);
-scan = scan(:,:,3:end);
+scan = scan(:,:,5:end-1);
 infoRatan = fitsinfo(filenameRatan);
 pixRatanSuccess = 0;
 solarCenterRatanSuccess = 0;
