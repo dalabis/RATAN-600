@@ -51,12 +51,12 @@ image = fitsread(filenameImage);
 infoImage = fitsinfo(filenameImage);
 rotateSpiritSuccess = 0;
 solarRadiusPixSpiritSuccess = 0;
-nameTelescopeSuccess = 0;
+instrumeSuccess = 0;
 CRPIX1_ImageSuccess = 0;
 CRPIX2_ImageSuccess = 0;
 i = 1;
 
-while (i <= size(infoImage.PrimaryData.Keywords, 1)) && ~(rotateSpiritSuccess && solarRadiusPixSpiritSuccess && nameTelescopeSuccess && CRPIX1_ImageSuccess && CRPIX2_ImageSuccess)
+while (i <= size(infoImage.PrimaryData.Keywords, 1)) && ~(rotateSpiritSuccess && solarRadiusPixSpiritSuccess && instrumeSuccess && CRPIX1_ImageSuccess && CRPIX2_ImageSuccess)
     if isequal(infoImage.PrimaryData.Keywords{i,1}, 'SC_ROLL')
         rotateSpirit = infoImage.PrimaryData.Keywords{i,2};
         rotateSpiritSuccess = 1;
@@ -67,9 +67,9 @@ while (i <= size(infoImage.PrimaryData.Keywords, 1)) && ~(rotateSpiritSuccess &&
         solarRadiusPixSpiritSuccess = 1;
     end
     
-    if isequal(infoImage.PrimaryData.Keywords{i,1}, 'TELESCOP')
-        nameTelescope = infoImage.PrimaryData.Keywords{i,2};
-        nameTelescopeSuccess = 1;
+    if isequal(infoImage.PrimaryData.Keywords{i,1}, 'INSTRUME')
+        instrume = infoImage.PrimaryData.Keywords{i,2};
+        instrumeSuccess = 1;
     end
     
     if isequal(infoImage.PrimaryData.Keywords{i,1}, 'CRPIX1')
@@ -87,7 +87,7 @@ while (i <= size(infoImage.PrimaryData.Keywords, 1)) && ~(rotateSpiritSuccess &&
 end
 
 %%
-if isequal(nameTelescope,'SPIRIT CORONAS-F')
+if CRPIX1_Image == 0 && CRPIX2_Image == 0
     figure
     imshow(image,[250 1500])
     hold on
@@ -103,8 +103,8 @@ if isequal(nameTelescope,'SPIRIT CORONAS-F')
     c1 = sum(x.^3) + sum(x.*y.^2) - 1/N*sum(x)*sum(x.^2+y.^2);
     c2 = sum(y.^3) + sum(y.*x.^2) - 1/N*sum(y)*sum(x.^2+y.^2);
 
-    x0 = (b1*c2 - c1*b2) / (a1*b2 - b1^2);
-    y0 = (b1*c1 - a1*c2) / (a1*b2 - b1^2);
+    x0 = (b1*c2 - c1*b2) / (a1*b2 - b1^2)
+    y0 = (b1*c1 - a1*c2) / (a1*b2 - b1^2)
 
     r = solarRadiusPixSpirit;
     c = [x0 y0];
@@ -116,36 +116,48 @@ else
 end
 
 %%
-newIm(1:fix(4*solarRadiusPixSpirit),1:fix(4*solarRadiusPixSpirit)) = 1500;
-newIm(fix(size(newIm,2)/2 - y0)+1:fix(size(newIm,2)/2 - y0)+size(image,2),...
-    fix(size(newIm,1)/2 - x0)+1:fix(size(newIm,1)/2 - x0)+size(image,1)) = image;
-
-% rotate image
-if isequal(nameTelescope,'SPIRIT CORONAS-F')
-    newIm = imrotate(newIm, (180 + rotateSpirit - atan(sin(solarDec/180*pi) * tan((solarRA-90)/180*pi))/pi*180),'crop');
-else
-    newIm = imrotate(newIm, (rotateSpirit + atan(sin(solarDec/180*pi) * tan((solarRA-90)/180*pi))/pi*180), 'crop');
-    newIm = flipud(newIm);
-end
-
-%%
+% create figure
 figure('units','centimeters','position',[2 2 9 9])
 subplot('position', [1/9 1/9 7/9 7/9])
-imagesc(newIm,[250 1500])
-colormap(gray)
+
+% rotate image
+if isequal(instrume, 'HR1 171 A')
+    newIm(1:fix(4*solarRadiusPixSpirit),1:fix(4*solarRadiusPixSpirit)) = 1500;
+        newIm(fix(size(newIm,2)/2 - y0)+1:fix(size(newIm,2)/2 - y0)+size(image,1),...
+    fix(size(newIm,1)/2 - x0)+1:fix(size(newIm,1)/2 - x0)+size(image,2)) = image;
+    newIm = flipud(newIm);
+    newIm = fliplr(newIm);
+    newIm = imrotate(newIm, (rotateSpirit - atan(sin(solarDec/180*pi) * tan((solarRA-90)/180*pi))/pi*180),'crop');
+    imshow(newIm,[250 1500])
+    colormap(gray)
+elseif isequal(instrume, 'Mg1 8.42 A')
+    newIm(1:fix(4*solarRadiusPixSpirit),1:fix(4*solarRadiusPixSpirit)) = 0;
+        newIm(fix(size(newIm,2)/2 - y0)+1:fix(size(newIm,2)/2 - y0)+size(image,1),...
+    fix(size(newIm,1)/2 - x0)+1:fix(size(newIm,1)/2 - x0)+size(image,2)) = image;
+    %newIm = flipud(newIm);
+    %newIm = fliplr(newIm);
+    newIm = imrotate(newIm, (-rotateSpirit - atan(sin(solarDec/180*pi) * tan((solarRA-90)/180*pi))/pi*180), 'crop');
+    newIm = flipud(newIm);
+    imshow(1500 - newIm,[250 1500])
+    colormap(gray)
+else
+    newIm(1:fix(4*solarRadiusPixSpirit),1:fix(4*solarRadiusPixSpirit)) = 1500;
+        newIm(fix(size(newIm,2)/2 - y0)+1:fix(size(newIm,2)/2 - y0)+size(image,1),...
+    fix(size(newIm,1)/2 - x0)+1:fix(size(newIm,1)/2 - x0)+size(image,2)) = image;
+    newIm = imrotate(newIm, (rotateSpirit + atan(sin(solarDec/180*pi) * tan((solarRA-90)/180*pi))/pi*180), 'crop');
+    newIm = flipud(newIm);
+    imshow(newIm,[250 1500])
+    colormap(gray)
+end
+
 axis on
 hold on
 
 xlim([ (size(newIm,2)/2 - 1.3*solarRadiusPixSpirit)  (size(newIm,2)/2 + 1.3*solarRadiusPixSpirit) ])
 ylim([ (size(newIm,1)/2 - 1.3*solarRadiusPixSpirit)  (size(newIm,1)/2 + 1.3*solarRadiusPixSpirit) ])
 
-%%%
-% unknown parameter
-unknownSwing = -20;
-%%%
-
 xi = linspace(1, size(scan,2), size(scan,2));
-xi = xi - (solarCenterRatan + unknownSwing - solarRadiusArcsecRatan / pixRatan);
+xi = xi - (solarCenterRatan - solarRadiusArcsecRatan / pixRatan);
 xi = xi ./ (solarRadiusArcsecRatan / pixRatan) .* solarRadiusPixSpirit;
 xi = xi + (size(newIm,1)/2 - solarRadiusPixSpirit);
 

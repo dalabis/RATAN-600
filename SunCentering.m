@@ -1,149 +1,169 @@
-clear
-close all
+function [CRPIX, maxGauss, AGauss, DGauss, currentDiscr] = SunCentering(data, CRPIX, R, ii, numGauss, alpha, Dfreq, sunShape)
 
-%% read .fits file and header
-fileName = '011022sun0_out_edit.fits';
-% data
-data = fitsread(fileName);
-% deliting bad frequencies
-badFreq = 2;
-data = data(:,:,3:end);
-% header
-info = fitsinfo(fileName);
-% read from header frequencies
-endSuccess = 0;
-commentSuccess = 0;
-freqNum = 1;
-counter = 1;
-
-while ~endSuccess
-    if isequal(info.PrimaryData.Keywords{counter, 1}, 'COMMENT')
-        commentSuccess = 1;
-    end
+    t = -R:R;
+    % Инициальзация массивов, которые содержат параметры вписнных
+    % гауссиан
+    maxGauss(1:numGauss) = 0;
+    AGauss(1:numGauss) = 0;
+    DGauss(1:numGauss) = 0;
     
-    if isequal(info.PrimaryData.Keywords{counter+1, 1}, 'END')
-        endSuccess = 1;
-    end
-    
-    counter = counter + 1;
-    
-    if commentSuccess == 1 && endSuccess == 0
-        freq(freqNum) = info.PrimaryData.Keywords{counter, 2};
-        freqNum = freqNum + 1;
-    end
-end
+    for g = 0:numGauss
+        % Инициальзация массивов, которые содержат параметры вписнных
+        % гауссиан
+        % На нулевом шаге (g = 0) гауссиана не вписывается, т.е. блоки Add
+        % и Min не выполняются
 
-% deleting bad frequencies
-freq = freq(1+badFreq:end);
+        for h = 1:g  
+            %% Add
+            % Добавление h-ой гауссианы, полное колличество g на текущем
+            % шаге
+            
+            % Поиск максимального значения в текущем массиве разности
+            % скана и спокойного Солнца свернутого с ДНА + h-1 гауссиан с
+            % текущими параметрами maxGauss, AGauss, DGauss
+            [~, maxGauss(h)] = max(dif);
+            
+            % Сглаживание шума
+            dif = smooth(dif,5)';
+            
+            % Выделение области в массиве dif для аппроксимации очередной
+            % h-ой гауссианой
+            % Область заключает в себе максимум и ограничена точками
+            % перегиба первого порядка (хорошо работает)
+            rightBound = maxGauss(h);
+            leftBound = maxGauss(h);
+            % На каждом шаге вправо проверяется знак второй разностной
+            % производной
+            % !!! Возможен еще один тип исключения: Subscript indices must 
+            % either be real positive integers or logicals (нужно это
+            % учесть)
+            % Поиск правой границы
+            while (dif(rightBound + 2) - dif(rightBound + 1)) < (dif(rightBound + 1) - dif(rightBound))
+                rightBound = rightBound + 1;
+            end
+            % Поиск левой границы
+            while (dif(leftBound - 2) - dif(leftBound - 1)) < (dif(leftBound - 1) - dif(leftBound))
+                leftBound = leftBound - 1;
+            end
+            % В том случае, если правая или левая граница не сдвинулась,
+            % кидает исклчение, которое нужно обработать в основной функции
+            if rightBound == maxGauss(h) || leftBound == maxGauss(h)
+                disp('Cannot fit th Gaussian according to this algorithm.')
+                
+                return
+            end
+            
+            % Чтобы избежать отрицательной разницы, массив dif 
+            % "приподнимается" так, чтобы гауссиана была вписана с
+            % макимальной амплитудой
+            rightMin = maxGauss(h);
+            leftMin = maxGauss(h);
+            % Поиск правой границы
+            while dif(rightMin + 1) < dif(rightMin)
+                rightMin = rightMin + 1;
+            end
+            % Поиск левой границы
+            while dif(leftMin + 1) < dif(leftMin)
+                leftMin = leftMin + 1;
+            end
+            % Определение минимального значения
+            if dif(rightMin) < dif(leftMin)
+                minGauss = dif(rightMin);
+            else
+                minGauss = dif(leftMin);
+            end
+            % Если минимальное значение больше 0, то сдвига не должно быть
+            if minGauss > 0
+                minGauss = 0;
+            end
+            
+            % Индексы области в массиве dif, в которой вписывается
+            % гауссиана
+            xGauss = leftBound-maxGauss(h):rightBound-maxGauss(h);
+            
+            % Гауссиана вписывается методом наименьших квадратов
+            A1(1:length(xGauss)) = 1;
+            A2 = xGauss.^2;
+            A = [A1', A2'];
+            A1 = [];
+            b = log(abs(dif(leftBound:rightBound) - minGauss));
+            coef = ( A' * A ) \ ( A' * b' );
+            % Параметры очередной гауссианы записываются в массив
+            % параметров
+            AGauss(h) = exp(coef(1));
+            DGauss(h) = sqrt( -1 / ( 2 * coef(2) ) );
 
-% transition from pixels to arcsec units
-CDELT = 4.9405;
-% solar radius, pix
-R = 964.2245912664 / CDELT;
-% solar center, pix
-CRPIX = 535.505615;
-% frequencies and antenna patern values from "Work Scan" program
-f = [  0.985;   1.015;   1.045;   1.670;   1.760;   1.860;   1.950; ...
-       2.050;   2.150;   2.270;   2.610;   2.720;   2.830;   2.950; ...
-       3.080;   3.210;   3.350;   3.670;   3.950;   4.270;   4.600;   4.950;   5.700; ...
-       6.080;   6.500;   6.950;   7.350;   7.830;   8.400;   8.750;   9.350;   9.800; ...
-      10.350;  10.950;  11.250;  12.950;  13.400;  14.250;  14.750;  15.650; ...
-      16.400                                                      ];
-D = [237.410; 235.200; 233.000; 188.000; 181.810; 174.940; 168.760; ...
-     162.240; 156.070; 148.660; 128.680; 122.880; 117.090; 110.770; ...
-     104.660;  99.010;  92.930;  80.500;  70.770;  61.770;  53.580;  46.550;  37.200; ...
-      33.250;  31.330;  29.270;  28.560;  27.910;  27.420;  27.190;  26.730;  26.360; ...
-      25.740;  24.970;  24.500;  21.580;  20.790;  19.330;  18.510;  17.290; ...
-      16.360                                                      ];
+            %% Min
+            % Подгонка свертки спокойного Солнца с ДНА + h текущих гауссиан
+            % по двум параметрам:
+            %   1. Сдвиг по оси времени
+            %   2. Масштабирование по амплитуде (домножение на константу)
+            % Методом наименьших квадратов с регулизационным параметром 
+            % alpha (входной параметр)
+            
+            % Свертка спокойного Солнца (уже свернутого с вертикальной ДНА)
+            % с горизонтальной диаграммой направленности
+            % Горизонтальная диаграмма направленности антенны
+            antennaPattern = @(x) exp( - x.^2 / ( 2 * (Dfreq(ii)/2.355)^2 ) );
+            % Свертка
+            convolution(1:length(x)) = 0;
+            for j = 1:length(x)
+                convolution(j) = trapz(sunShape(:,ii)' .* antennaPattern(x(j)-t));
+            end
+            
+            % Сумма всех h текущих гауссиан
+            gauss(1:size(data, 2)) = 0;
+            for f = 1:h
+                gauss = gauss + AGauss(f).*exp(-(x-maxGauss(f)+CRPIX).^2./(2.*DGauss(f).^2));
+            end
 
-%%
-% founding antenna pattern values from frequencies 
-% horizontal antenna pattern
-Dfreq(1:length(freq)) = 0;
-j = 1;
+            % Подгонка свертки Спокойного солнсца с ДНА к скану - сумма
+            % всех текущих гауссиан
+            % МНК с гребневой регуляризацией (alpha параметр регуляризации)
+            A = convolution';
+            b = data(1,:,ii) - gauss;
+            coef = (A'*A + alpha) \ (A'*b');
 
-for i = 1:length(f)
-    if j <= length(freq) && freq(j) == f(i)
-        Dfreq(j) = D(i);
-        j = j + 1;
-    end
-end
-
-% vertical antenna pattern
-DVertFreq = 2225./freq;
-t = -R:R;
-% sun 2D mask initialization
-sun(1:2*R+1,1:2*R+1) = 0;
-
-% Sun 2D mask
-for i = 1:2*R+1
-    for j = 1:2*R+1
-        if sqrt( (i-R+1)^2 + (j-R+1)^2 ) <= R
-            sun(i,j) = 1;
+            % нахождение разницы между сканом и сверткой спокойного Солнца
+            % с ДНА + h гауссиан
+            dif = data(1,:,ii) - coef.*convolution - gauss;
         end
-    end
-end
 
-% convolution from the Sun and vertical antenna pattern
-sunShape(1:2*R+1,1:length(freq)) = 0;
-
-for j = 1:length(freq)
-    vertAntennaPattern = @(x) exp( - x.^2 / ( 2 * (DVertFreq(j)/2.355)^2 ) );
-    for i = 1:2*R+1
-        sunShape(i,j) = sum( sun(:,i)' .* vertAntennaPattern(t) );
-    end
-end
-
-%% 1 %%%%%%%%%%%%%%%%%%%%%%%%%%%%
-ii = 32;
-
-for g = 0:15
-    if g == 0
-        maxGauss = [];
-        AGauss = [];
-        DGauss = [];
-    else
-        maxGauss(1:g) = 0;
-        AGauss(1:g) = 0;
-        DGauss(1:g) = 0;
-    end
-    
-    for h = 1:g  
-        %% add
-        % add first gaussian
-        [~, maxGauss(h)] = max(diff);
-        leftBound = maxGauss(h);
-        rightBound = maxGauss(h);
+        %% Find
+        % Нахождение нового Солнечного центра методом наискорейшего спуска
+        % На этом шаге меняется только центр покойного Солнца
+        % Функция discrepancy вычисляет относиельную разницу между сверткой
+        % спокойного Солнца ДНА + h гауссиан и одномерным сканом
+        newCRPIX = CRPIX;
+        currentDiscr = discrepancy(CRPIX, R, Dfreq, data, sunShape(:,ii), ii, maxGauss, AGauss, DGauss, alpha);
+        posStepDiscr = discrepancy(CRPIX+1, R, Dfreq, data, sunShape(:,ii), ii, maxGauss, AGauss, DGauss, alpha);
+        negStepDiscr = discrepancy(CRPIX-1, R, Dfreq, data, sunShape(:,ii), ii, maxGauss, AGauss, DGauss, alpha);
         
-        % windowed averaging
-        diff = smooth(diff,5)';
-
-        % right bound
-        while (diff(rightBound+2) - diff(rightBound+1)) < (diff(rightBound+1) - diff(rightBound))
-            rightBound = rightBound + 1;
+        % Движение происходит только в одном изначально выбранном
+        % направлении
+        % Движение вправо, пока относительная разница не перестает меняться
+        if posStepDiscr < currentDiscr
+            while posStepDiscr < currentDiscr
+                newCRPIX = newCRPIX + 1;
+                currentDiscr = posStepDiscr;
+                posStepDiscr = discrepancy(newCRPIX+1, R, Dfreq, data, sunShape(:,ii), ii, maxGauss, AGauss, DGauss, alpha);
+            end
+        % Движение влево, пока относительная разница не перестает меняться
+        elseif negStepDiscr < currentDiscr
+            while negStepDiscr < currentDiscr
+                newCRPIX = newCRPIX - 1;
+                currentDiscr = negStepDiscr;
+                negStepDiscr = discrepancy(newCRPIX-1, R, Dfreq, data, sunShape(:,ii), ii, maxGauss, AGauss, DGauss, alpha);
+            end
         end
+        
+        % Изменение центра Солнца, эта переменная используется на
+        % последующих шагах
+        CRPIX = newCRPIX;
 
-        % left bound
-        while (diff(leftBound-2) - diff(leftBound-1)) < (diff(leftBound-1) - diff(leftBound))
-            leftBound = leftBound - 1;
-        end
-
-        xGauss = leftBound-maxGauss(h):rightBound-maxGauss(h);
-
-        A1(1:length(xGauss)) = 1;
-        A2 = xGauss.^2;
-        A = [A1', A2'];
-        A1 = [];
-        b = log(abs(diff(leftBound:rightBound)));
-        coef = ( A' * A ) \ ( A' * b' );
-        AGauss(h) = exp(coef(1));
-        DGauss(h) = sqrt( -1 / ( 2 * coef(2) ) );
-
-        %% min
-        % minimization with first gaussian
-        %figure
-        %hold on
-        %axis tight
+        %% Plot
+        % plot quiet Sun shape and RATAN scan with first gaussian
+        x = 1-CRPIX:1:size(data,2)-CRPIX;
 
         antennaPattern = @(x) exp( - x.^2 / ( 2 * (Dfreq(ii)/2.355)^2 ) );
         convolution(1:length(x)) = 0;
@@ -151,81 +171,34 @@ for g = 0:15
         for j = 1:length(x)
             convolution(j) = trapz(sunShape(:,ii)' .* antennaPattern(x(j)-t));
         end
+
+        %figure
+        %hold on
         
         gauss(1:size(data, 2)) = 0;
-        for f = 1:h
-            gauss = gauss + AGauss(f).*exp(-(x-maxGauss(f)+CRPIX).^2./(2.*DGauss(f).^2));
+        for h = 1:g
+            %plot(x, AGauss(h).*exp(-(x-maxGauss(h)+CRPIX).^2./(2.*DGauss(h).^2)))
+            gauss = gauss + AGauss(h).*exp(-(x-maxGauss(h)+CRPIX).^2./(2.*DGauss(h).^2));
         end
         A = convolution';
         b = data(1,:,ii) - gauss;
-        coef = (A'*A) \ (A'*b');
+        coef = (A'*A + alpha) \ (A'*b');
+        %[~,point] = min(data(1,:,ii) - convolution - gauss);
+        %coef = 1/convolution(point)*data(1,point,ii);
 
-        % differences between scan and quiet Sun shape
-        diff = data(1,:,ii) - coef.*convolution - gauss;
-
+        % diferences between scan and quiet Sun shape
+        dif = data(1,:,ii) - coef.*convolution;
+        
         %plot(x, data(1,:,ii))
         %plot(x, coef.*convolution + gauss, '--')
-        %plot(x, diff, '-')
-
+        %plot(x, coef.*convolution)
+        %plot(x, dif - gauss, '-')
     end
-    
-    %% find
-    % find new solar center
-    newCRPIX = CRPIX;
-    currentDiscr = discrepancy(CRPIX, R, Dfreq, data, sunShape(:,ii), ii, maxGauss, AGauss, DGauss);
-    posStepDiscr = discrepancy(CRPIX+1, R, Dfreq, data, sunShape(:,ii), ii, maxGauss, AGauss, DGauss);
-    negStepDiscr = discrepancy(CRPIX-1, R, Dfreq, data, sunShape(:,ii), ii, maxGauss, AGauss, DGauss);
-
-    if posStepDiscr < currentDiscr
-        while posStepDiscr < currentDiscr
-            newCRPIX = newCRPIX + 1;
-            currentDiscr = posStepDiscr;
-            posStepDiscr = discrepancy(newCRPIX+1, R, Dfreq, data, sunShape(:,ii), ii, maxGauss, AGauss, DGauss);
-        end
-    elseif negStepDiscr < currentDiscr
-        while negStepDiscr < currentDiscr
-            newCRPIX = newCRPIX - 1;
-            currentDiscr = negStepDiscr;
-            negStepDiscr = discrepancy(newCRPIX-1, R, Dfreq, data, sunShape(:,ii), ii, maxGauss, AGauss, DGauss);
-        end
-    end
-
-    CRPIX = newCRPIX;
-
-    %% plot
-    % plot quiet Sun shape and RATAN scan with first gaussian
-    x = 1-CRPIX:1:size(data,2)-CRPIX;
-
-    figure
-    hold on
-    axis tight
-
-    antennaPattern = @(x) exp( - x.^2 / ( 2 * (Dfreq(ii)/2.355)^2 ) );
-    convolution(1:length(x)) = 0;
-
-    for j = 1:length(x)
-        convolution(j) = trapz(sunShape(:,ii)' .* antennaPattern(x(j)-t));
-    end
-
-    gauss(1:size(data, 2)) = 0;
-    for h = 1:g
-        gauss = gauss + AGauss(h).*exp(-(x-maxGauss(h)+CRPIX).^2./(2.*DGauss(h).^2));
-    end
-    A = convolution';
-    b = data(1,:,ii) - gauss;
-    coef = (A'*A) \ (A'*b');
-
-    % differences between scan and quiet Sun shape
-    diff = data(1,:,ii) - coef.*convolution;
-
-    plot(x, data(1,:,ii))
-    plot(x, coef.*convolution + gauss, '--')
-    plot(x, diff - gauss, '-')
 end
 
 %% sun shape discrepancy function %%%%%%%%%%%%%%%%%%%%%%%%%%
 % this function finds discrepancy from RATAN scan and quiet Sun shape
-function discr = discrepancy(CRPIX, R, Dfreq, data, sunShape, ii, maxGauss, AGauss, DGauss)
+function discr = discrepancy(CRPIX, R, Dfreq, data, sunShape, ii, maxGauss, AGauss, DGauss, alpha)
     x = 1-CRPIX:1:size(data,2)-CRPIX;
     t = -R:R;
     antennaPattern = @(x) exp( - x.^2 / ( 2 * (Dfreq(ii)/2.355)^2 ) );
@@ -243,9 +216,11 @@ function discr = discrepancy(CRPIX, R, Dfreq, data, sunShape, ii, maxGauss, AGau
     
     A = convolution';
     b = data(1,:,ii) - gauss;
-    coef = (A'*A) \ (A'*b');
+    coef = (A'*A + alpha) \ (A'*b');
+    %[~,point] = min(data(1,:,ii) - convolution - gauss);
+    %coef = 1/convolution(point)*data(1,point,ii);
     
-    diff = data(1,:,ii) - coef.*convolution - gauss;
+    dif = data(1,:,ii) - coef.*convolution - gauss;
     
-    discr = sum(diff);
+    discr = sum(abs(dif));
 end
