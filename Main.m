@@ -2,120 +2,128 @@ clear
 close all
 
 %% read .fits file and header
-    fileName = '011022sun0_out_edit.fits';
-    % data
-    data = fitsread(fileName);
-    % deliting bad frequencies
-    badFreq = 2;
-    data = data(:,:,3:end);
-    % header
-    info = fitsinfo(fileName);
+fileName = '011022sun0_out_edit.fits';
+% data
+data = fitsread(fileName);
+% deliting bad frequencies
+badFreq = 2;
+data = data(:,:,3:end);
+% header
+info = fitsinfo(fileName);
+
+% чтение значений частот из заголовка
+endSuccess = 0;
+commentSuccess = 0;
+freqNum = 1;
+counter = 1;
+while ~endSuccess
+    if isequal(info.PrimaryData.Keywords{counter, 1}, 'COMMENT')
+        commentSuccess = 1;
+    end
     
-    % чтение значений частот из заголовка
-    endSuccess = 0;
-    commentSuccess = 0;
-    freqNum = 1;
-    counter = 1;
-    while ~endSuccess
-        if isequal(info.PrimaryData.Keywords{counter, 1}, 'COMMENT')
-            commentSuccess = 1;
-        end
+    if isequal(info.PrimaryData.Keywords{counter+1, 1}, 'END')
+        endSuccess = 1;
+    end
+    
+    counter = counter + 1;
+    
+    if commentSuccess == 1 && endSuccess == 0
+        freq(freqNum) = info.PrimaryData.Keywords{counter, 2};
+        
+        freqNum = freqNum + 1;
+    end
+end
 
-        if isequal(info.PrimaryData.Keywords{counter+1, 1}, 'END')
-            endSuccess = 1;
-        end
+% deleting bad frequencies
+freq = freq(1+badFreq:end);
 
-        counter = counter + 1;
+% transition from pixels to arcsec units
+CDELT = 4.9405;
+% solar radius, pix
+R = 964.2245912664 / CDELT;
+% solar center, pix
+CRPIX = 535.505615;
 
-        if commentSuccess == 1 && endSuccess == 0
-            freq(freqNum) = info.PrimaryData.Keywords{counter, 2};
-            freqNum = freqNum + 1;
+% Массивы значений частоты f и горизонтальной полуширины диаграммы 
+% направленности D
+% Массив взят из программы WorkScan
+f = [  0.985;   1.015;   1.045;   1.670;   1.760;   1.860;   1.950; ...
+       2.050;   2.150;   2.270;   2.610;   2.720;   2.830;   2.950; ...
+       3.080;   3.210;   3.350;   3.670;   3.950;   4.270;   4.600; ...
+       4.950;   5.700;   6.080;   6.500;   6.950;   7.350;   7.830; ...
+       8.400;   8.750;   9.350;   9.800;  10.350;  10.950;  11.250; ...
+      12.950;  13.400;  14.250;  14.750;  15.650;  16.400         ];
+D = [237.410; 235.200; 233.000; 188.000; 181.810; 174.940; 168.760; ...
+     162.240; 156.070; 148.660; 128.680; 122.880; 117.090; 110.770; ...
+     104.660;  99.010;  92.930;  80.500;  70.770;  61.770;  53.580; ...
+      46.550;  37.200;  33.250;  31.330;  29.270;  28.560;  27.910; ...
+      27.420;  27.190;  26.730;  26.360;  25.740;  24.970;  24.500; ...
+      21.580;  20.790;  19.330;  18.510;  17.290;  16.360         ];
+
+% Эта часть находит массив горизонтальной полуширины диаграммы
+% направленности Dfreq соответсвующий массиву частот считанному из
+% fits. файла
+Dfreq(1:length(freq)) = 0;
+j = 1;
+for i = 1:length(f)
+    if j <= length(freq) && freq(j) == f(i)
+        Dfreq(j) = D(i);
+        
+        j = j + 1;
+    end
+end
+
+% Получение массива вертикальной полуширины диаграммы направленности 
+% DVertFreq
+% Интерполяция взята сайта spbf.sao
+DVertFreq = 225./freq;
+
+% Эта часть строит модельное изображение Солнца в виде квадратной
+% матрицы, которая имеет размер равный двум солнечным радиусам
+% Солнце имеет форму круга с одинаковой интенсивностью равной 1
+sun(1:fix(2*R)+1,1:fix(2*R)+1) = 0;
+% Центр круга совпадает с центром матрицы
+for i = 1:2*R+1
+    for j = 1:2*R+1
+        if sqrt( (i-R+1)^2 + (j-R+1)^2 ) <= R
+            sun(i,j) = 1;
         end
     end
+end
 
-    % deleting bad frequencies
-    freq = freq(1+badFreq:end);
-    
-    % transition from pixels to arcsec units
-    CDELT = 4.9405;
-    % solar radius, pix
-    R = 964.2245912664 / CDELT;
-    % solar center, pix
-    CRPIX = 535.505615;
-    
-    % Массивы значений частоты f и горизонтальной полуширины диаграммы 
-    % направленности D
-    % Массив взят из программы WorkScan
-    f = [  0.985;   1.015;   1.045;   1.670;   1.760;   1.860;   1.950; ...
-           2.050;   2.150;   2.270;   2.610;   2.720;   2.830;   2.950; ...
-           3.080;   3.210;   3.350;   3.670;   3.950;   4.270;   4.600;   4.950;   5.700; ...
-           6.080;   6.500;   6.950;   7.350;   7.830;   8.400;   8.750;   9.350;   9.800; ...
-          10.350;  10.950;  11.250;  12.950;  13.400;  14.250;  14.750;  15.650; ...
-          16.400                                                      ];
-    D = [237.410; 235.200; 233.000; 188.000; 181.810; 174.940; 168.760; ...
-         162.240; 156.070; 148.660; 128.680; 122.880; 117.090; 110.770; ...
-         104.660;  99.010;  92.930;  80.500;  70.770;  61.770;  53.580;  46.550;  37.200; ...
-          33.250;  31.330;  29.270;  28.560;  27.910;  27.420;  27.190;  26.730;  26.360; ...
-          25.740;  24.970;  24.500;  21.580;  20.790;  19.330;  18.510;  17.290; ...
-          16.360                                                      ];
+% 
+t = -R:R;
+% Инициализация cвертки Солнца с вертикальной диаграммой направленности
+sunShape(1:fix(2*R)+1,1:length(freq)) = 0;
 
-    % Эта часть находит массив горизонтальной полуширины диаграммы
-    % направленности Dfreq соответсвующий массиву частот считанному из
-    % fits. файла
-    Dfreq(1:length(freq)) = 0;
-    j = 1;
-    for i = 1:length(f)
-        if j <= length(freq) && freq(j) == f(i)
-            Dfreq(j) = D(i);
-            j = j + 1;
-        end
-    end
-
-    % Получение массива вертикальной полуширины диаграммы направленности 
-    % DVertFreq
-    % Интерполяция взята сайта spbf.sao
-    DVertFreq = 225./freq;
+% Свертка Солнца с вертикальной диаграммой направленности
+for j = 1:length(freq)
+    vertAntennaPattern = @(x) exp( - x.^2 / ( 2 * (DVertFreq(j)/2.355)^2 ) );
     
-    % Эта часть строит модельное изображение Солнца в виде квадратной
-    % матрицы, которая имеет размер равный двум солнечным радиусам
-    % Солнце имеет форму круга с одинаковой интенсивностью равной 1
-    sun(1:fix(2*R)+1,1:fix(2*R)+1) = 0;
-    % Центр круга совпадает с центром матрицы
     for i = 1:2*R+1
-        for j = 1:2*R+1
-            if sqrt( (i-R+1)^2 + (j-R+1)^2 ) <= R
-                sun(i,j) = 1;
-            end
-        end
+        sunShape(i,j) = sum( sun(:,i)' .* vertAntennaPattern(t) );
     end
-    
-    % 
-    t = -R:R;
-    % Свертка Солнца с вертикальной диаграммой направленности
-    sunShape(1:fix(2*R)+1,1:length(freq)) = 0;
-    for j = 1:length(freq)
-        vertAntennaPattern = @(x) exp( - x.^2 / ( 2 * (DVertFreq(j)/2.355)^2 ) );
-        for i = 1:2*R+1
-            sunShape(i,j) = sum( sun(:,i)' .* vertAntennaPattern(t) );
-        end
-    end
+end
    
 %%
-numGauss = 20;
+% Число итераций, число вписываемых гауссиан
+numGauss = 25;
+% Массив новых центров Солнца, на каждой частоте погоняется независимо
 CRPIXfreq(1:length(freq)) = 0;
+% Параметр гребневой регуляризации
+% Возможно, использоваться не будет (незначительный вклад)
 alpha = 0;
-
+% Инициализация массивов с параметрами гауссиан
+% Положение максимума
 maxGauss(1:length(freq), 1:numGauss) = 0;
+% Значение максимума
 AGauss(1:length(freq), 1:numGauss) = 0;
+% Полуширина
 DGauss(1:length(freq), 1:numGauss) = 0;
 
-for i = 1:length(freq)
-    try
-        [CRPIXfreq(i), maxGauss(i,:), AGauss(i,:), DGauss(i,:), Discr] = ...
-            SunCentering(data, CRPIX, R, i, numGauss, alpha, Dfreq, sunShape);
-    catch ME
-        fprintf('scan processing %i (%fGHz) cannot be completed: %s\n', i, freq(i), ME.message)
-    end
+for freqNum = 1:length(freq)
+    [CRPIXfreq(freqNum), maxGauss(freqNum,:), AGauss(freqNum,:), DGauss(freqNum,:), Discr] = ...
+        SunCentering(data, CRPIX, R, freqNum, numGauss, alpha, Dfreq, sunShape, 'None');
 end
 
 %%
@@ -139,7 +147,7 @@ end
 % выбор нулей
 j = 1;
 for i = 1:length(freq)
-    if maxGauss(i, 1) ~= 0 && AGauss(i, 1) < 200000
+    if maxGauss(i, 1) ~= 0
         freq1(j) = freq(i);
         maxGauss1(j,1:numGauss) = maxGauss(i,:);
         AGauss1(j,1:numGauss) = AGauss(i,:);
@@ -174,7 +182,7 @@ maxGauss2(1, 1:numGauss) = maxGauss1(1, :);
 % максимально допустимое значение отклонения максимума междусоседними
 % частотами, если отклонение меньше допустимого не найдено, то значение
 % записывается как новый источник
-trig = 20;
+trig = 30;
 % размер нового массива
 size2 = numGauss;
 
@@ -228,3 +236,7 @@ hold on
 for i = 1:size1
     plot(freq2, DGauss2(:,i))
 end
+
+%%
+
+%%

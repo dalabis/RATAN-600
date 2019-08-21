@@ -1,4 +1,4 @@
-function [CRPIX, maxGauss, AGauss, DGauss, currentDiscr] = SunCentering(data, CRPIX, R, ii, numGauss, alpha, Dfreq, sunShape)
+function [CRPIX, maxGauss, AGauss, DGauss, currentDiscr] = SunCentering(data, CRPIX, R, freqNum, numGauss, alpha, Dfreq, sunShape, graphType)
 
     t = -R:R;
     % Инициальзация массивов, которые содержат параметры вписнных
@@ -6,6 +6,9 @@ function [CRPIX, maxGauss, AGauss, DGauss, currentDiscr] = SunCentering(data, CR
     maxGauss(1:numGauss) = 0;
     AGauss(1:numGauss) = 0;
     DGauss(1:numGauss) = 0;
+    
+    % Сглаживание пиков
+    data(1,:,freqNum) = averaging(data(1,:,freqNum), Dfreq);
     
     for g = 0:numGauss
         % Инициальзация массивов, которые содержат параметры вписнных
@@ -23,8 +26,6 @@ function [CRPIX, maxGauss, AGauss, DGauss, currentDiscr] = SunCentering(data, CR
             % текущими параметрами maxGauss, AGauss, DGauss
             [~, maxGauss(h)] = max(dif);
             
-            % Сглаживание шума
-            dif = smooth(dif,5)';
             
             % Выделение области в массиве dif для аппроксимации очередной
             % h-ой гауссианой
@@ -40,41 +41,29 @@ function [CRPIX, maxGauss, AGauss, DGauss, currentDiscr] = SunCentering(data, CR
             % Поиск правой границы
             while (dif(rightBound + 2) - dif(rightBound + 1)) < (dif(rightBound + 1) - dif(rightBound))
                 rightBound = rightBound + 1;
+                
+                if rightBound + 2 > length(dif)
+                    disp(['Cannot fit ', num2str(h), 'th Gaussian according to this algorithm: поиск приостановлен на правом краю массива'])
+                    
+                    return
+                end
             end
             % Поиск левой границы
             while (dif(leftBound - 2) - dif(leftBound - 1)) < (dif(leftBound - 1) - dif(leftBound))
                 leftBound = leftBound - 1;
+                
+                if leftBound - 2 < 1
+                    disp(['Cannot fit ', num2str(h), 'th Gaussian according to this algorithm: поиск приостановлен на левом краю массива'])
+                    
+                    return
+                end
             end
             % В том случае, если правая или левая граница не сдвинулась,
             % кидает исклчение, которое нужно обработать в основной функции
             if rightBound == maxGauss(h) || leftBound == maxGauss(h)
-                disp('Cannot fit th Gaussian according to this algorithm.')
+                disp(['Cannot fit ', num2str(h), 'th Gaussian according to this algorithm: недостаточная гладкость'])
                 
                 return
-            end
-            
-            % Чтобы избежать отрицательной разницы, массив dif 
-            % "приподнимается" так, чтобы гауссиана была вписана с
-            % макимальной амплитудой
-            rightMin = maxGauss(h);
-            leftMin = maxGauss(h);
-            % Поиск правой границы
-            while dif(rightMin + 1) < dif(rightMin)
-                rightMin = rightMin + 1;
-            end
-            % Поиск левой границы
-            while dif(leftMin + 1) < dif(leftMin)
-                leftMin = leftMin + 1;
-            end
-            % Определение минимального значения
-            if dif(rightMin) < dif(leftMin)
-                minGauss = dif(rightMin);
-            else
-                minGauss = dif(leftMin);
-            end
-            % Если минимальное значение больше 0, то сдвига не должно быть
-            if minGauss > 0
-                minGauss = 0;
             end
             
             % Индексы области в массиве dif, в которой вписывается
@@ -86,12 +75,14 @@ function [CRPIX, maxGauss, AGauss, DGauss, currentDiscr] = SunCentering(data, CR
             A2 = xGauss.^2;
             A = [A1', A2'];
             A1 = [];
-            b = log(abs(dif(leftBound:rightBound) - minGauss));
+            b = log(abs(dif(leftBound:rightBound)));
             coef = ( A' * A ) \ ( A' * b' );
             % Параметры очередной гауссианы записываются в массив
             % параметров
             AGauss(h) = exp(coef(1));
-            DGauss(h) = sqrt( -1 / ( 2 * coef(2) ) );
+            % Полуширина может оказаться чисто мнимой, поэтому берется
+            % модуль
+            DGauss(h) = abs(sqrt( -1 / ( 2 * coef(2) ) ));
 
             %% Min
             % Подгонка свертки спокойного Солнца с ДНА + h текущих гауссиан
@@ -104,11 +95,11 @@ function [CRPIX, maxGauss, AGauss, DGauss, currentDiscr] = SunCentering(data, CR
             % Свертка спокойного Солнца (уже свернутого с вертикальной ДНА)
             % с горизонтальной диаграммой направленности
             % Горизонтальная диаграмма направленности антенны
-            antennaPattern = @(x) exp( - x.^2 / ( 2 * (Dfreq(ii)/2.355)^2 ) );
+            antennaPattern = @(x) exp( - x.^2 / ( 2 * (Dfreq(freqNum)/2.355)^2 ) );
             % Свертка
             convolution(1:length(x)) = 0;
             for j = 1:length(x)
-                convolution(j) = trapz(sunShape(:,ii)' .* antennaPattern(x(j)-t));
+                convolution(j) = trapz(sunShape(:,freqNum)' .* antennaPattern(x(j)-t));
             end
             
             % Сумма всех h текущих гауссиан
@@ -121,12 +112,12 @@ function [CRPIX, maxGauss, AGauss, DGauss, currentDiscr] = SunCentering(data, CR
             % всех текущих гауссиан
             % МНК с гребневой регуляризацией (alpha параметр регуляризации)
             A = convolution';
-            b = data(1,:,ii) - gauss;
+            b = data(1,:,freqNum) - gauss;
             coef = (A'*A + alpha) \ (A'*b');
 
             % нахождение разницы между сканом и сверткой спокойного Солнца
             % с ДНА + h гауссиан
-            dif = data(1,:,ii) - coef.*convolution - gauss;
+            dif = data(1,:,freqNum) - coef.*convolution - gauss;
         end
 
         %% Find
@@ -135,9 +126,9 @@ function [CRPIX, maxGauss, AGauss, DGauss, currentDiscr] = SunCentering(data, CR
         % Функция discrepancy вычисляет относиельную разницу между сверткой
         % спокойного Солнца ДНА + h гауссиан и одномерным сканом
         newCRPIX = CRPIX;
-        currentDiscr = discrepancy(CRPIX, R, Dfreq, data, sunShape(:,ii), ii, maxGauss, AGauss, DGauss, alpha);
-        posStepDiscr = discrepancy(CRPIX+1, R, Dfreq, data, sunShape(:,ii), ii, maxGauss, AGauss, DGauss, alpha);
-        negStepDiscr = discrepancy(CRPIX-1, R, Dfreq, data, sunShape(:,ii), ii, maxGauss, AGauss, DGauss, alpha);
+        currentDiscr = discrepancy(CRPIX, R, Dfreq, data, sunShape(:,freqNum), freqNum, maxGauss, AGauss, DGauss, alpha);
+        posStepDiscr = discrepancy(CRPIX+1, R, Dfreq, data, sunShape(:,freqNum), freqNum, maxGauss, AGauss, DGauss, alpha);
+        negStepDiscr = discrepancy(CRPIX-1, R, Dfreq, data, sunShape(:,freqNum), freqNum, maxGauss, AGauss, DGauss, alpha);
         
         % Движение происходит только в одном изначально выбранном
         % направлении
@@ -146,14 +137,14 @@ function [CRPIX, maxGauss, AGauss, DGauss, currentDiscr] = SunCentering(data, CR
             while posStepDiscr < currentDiscr
                 newCRPIX = newCRPIX + 1;
                 currentDiscr = posStepDiscr;
-                posStepDiscr = discrepancy(newCRPIX+1, R, Dfreq, data, sunShape(:,ii), ii, maxGauss, AGauss, DGauss, alpha);
+                posStepDiscr = discrepancy(newCRPIX+1, R, Dfreq, data, sunShape(:,freqNum), freqNum, maxGauss, AGauss, DGauss, alpha);
             end
         % Движение влево, пока относительная разница не перестает меняться
         elseif negStepDiscr < currentDiscr
             while negStepDiscr < currentDiscr
                 newCRPIX = newCRPIX - 1;
                 currentDiscr = negStepDiscr;
-                negStepDiscr = discrepancy(newCRPIX-1, R, Dfreq, data, sunShape(:,ii), ii, maxGauss, AGauss, DGauss, alpha);
+                negStepDiscr = discrepancy(newCRPIX-1, R, Dfreq, data, sunShape(:,freqNum), freqNum, maxGauss, AGauss, DGauss, alpha);
             end
         end
         
@@ -165,43 +156,69 @@ function [CRPIX, maxGauss, AGauss, DGauss, currentDiscr] = SunCentering(data, CR
         % plot quiet Sun shape and RATAN scan with first gaussian
         x = 1-CRPIX:1:size(data,2)-CRPIX;
 
-        antennaPattern = @(x) exp( - x.^2 / ( 2 * (Dfreq(ii)/2.355)^2 ) );
+        antennaPattern = @(x) exp( - x.^2 / ( 2 * (Dfreq(freqNum)/2.355)^2 ) );
         convolution(1:length(x)) = 0;
 
         for j = 1:length(x)
-            convolution(j) = trapz(sunShape(:,ii)' .* antennaPattern(x(j)-t));
+            convolution(j) = trapz(sunShape(:,freqNum)' .* antennaPattern(x(j)-t));
         end
-
-        %figure
-        %hold on
         
-        gauss(1:size(data, 2)) = 0;
-        for h = 1:g
-            %plot(x, AGauss(h).*exp(-(x-maxGauss(h)+CRPIX).^2./(2.*DGauss(h).^2)))
-            gauss = gauss + AGauss(h).*exp(-(x-maxGauss(h)+CRPIX).^2./(2.*DGauss(h).^2));
+        if isequal(graphType, 'AllSteps')
+            figure
+            hold on
+
+            gauss(1:size(data, 2)) = 0;
+            for h = 1:g
+                plot(x, AGauss(h).*exp(-(x-maxGauss(h)+CRPIX).^2./(2.*DGauss(h).^2)))
+                gauss = gauss + AGauss(h).*exp(-(x-maxGauss(h)+CRPIX).^2./(2.*DGauss(h).^2));
+            end
+            A = convolution';
+            b = data(1,:,freqNum) - gauss;
+            coef = (A'*A + alpha) \ (A'*b');
+
+            % diferences between scan and quiet Sun shape
+            dif = data(1,:,freqNum) - coef.*convolution;
+
+            plot(x, data(1,:,freqNum))
+            plot(x, coef.*convolution + gauss, '--')
+            plot(x, coef.*convolution)
+            plot(x, dif - gauss, '-')
+        else
+            gauss(1:size(data, 2)) = 0;
+            for h = 1:g
+                gauss = gauss + AGauss(h).*exp(-(x-maxGauss(h)+CRPIX).^2./(2.*DGauss(h).^2));
+            end
+            A = convolution';
+            b = data(1,:,freqNum) - gauss;
+            coef = (A'*A + alpha) \ (A'*b');
+
+            % diferences between scan and quiet Sun shape
+            dif = data(1,:,freqNum) - coef.*convolution;
+            
+            if h == numGauss
+                figure
+                hold on
+                
+                for h = 1:g
+                    plot(x, AGauss(h).*exp(-(x-maxGauss(h)+CRPIX).^2./(2.*DGauss(h).^2)))
+                end
+                
+                plot(x, data(1,:,freqNum))
+                plot(x, coef.*convolution + gauss, '--')
+                plot(x, coef.*convolution)
+                plot(x, dif - gauss, '-')
+            end
         end
-        A = convolution';
-        b = data(1,:,ii) - gauss;
-        coef = (A'*A + alpha) \ (A'*b');
-        %[~,point] = min(data(1,:,ii) - convolution - gauss);
-        %coef = 1/convolution(point)*data(1,point,ii);
-
-        % diferences between scan and quiet Sun shape
-        dif = data(1,:,ii) - coef.*convolution;
-        
-        %plot(x, data(1,:,ii))
-        %plot(x, coef.*convolution + gauss, '--')
-        %plot(x, coef.*convolution)
-        %plot(x, dif - gauss, '-')
     end
 end
 
-%% sun shape discrepancy function %%%%%%%%%%%%%%%%%%%%%%%%%%
-% this function finds discrepancy from RATAN scan and quiet Sun shape
-function discr = discrepancy(CRPIX, R, Dfreq, data, sunShape, ii, maxGauss, AGauss, DGauss, alpha)
+%% Discrepancy
+% Эта функция считает относительную разницу между сверткой спокойного
+% Солнца с ДНА + h гауссиан и одномерным сканом
+function discr = discrepancy(CRPIX, R, Dfreq, data, sunShape, freqNum, maxGauss, AGauss, DGauss, alpha)
     x = 1-CRPIX:1:size(data,2)-CRPIX;
     t = -R:R;
-    antennaPattern = @(x) exp( - x.^2 / ( 2 * (Dfreq(ii)/2.355)^2 ) );
+    antennaPattern = @(x) exp( - x.^2 / ( 2 * (Dfreq(freqNum)/2.355)^2 ) );
     convolution(1:length(x)) = 0;
     
     % layer with gaussians
@@ -215,12 +232,32 @@ function discr = discrepancy(CRPIX, R, Dfreq, data, sunShape, ii, maxGauss, AGau
     end
     
     A = convolution';
-    b = data(1,:,ii) - gauss;
+    b = data(1,:,freqNum) - gauss;
     coef = (A'*A + alpha) \ (A'*b');
-    %[~,point] = min(data(1,:,ii) - convolution - gauss);
-    %coef = 1/convolution(point)*data(1,point,ii);
     
-    dif = data(1,:,ii) - coef.*convolution - gauss;
+    dif = data(1,:,freqNum) - coef.*convolution - gauss;
     
     discr = sum(abs(dif));
+end
+
+%% Averaging
+% Эта функция строит непараметрическую регрессию с нормальным ядром
+% Так пики получаются более гладкими
+% Но ширину ядра нужно подбирать для каждой частоты отдельно (Можно связать с шириной ДНА, но почему то не работает)
+function averData = averaging(data, Dfreq)
+    % Ширина окна
+    h = 5;
+    % Число отчетов
+    m = length(data);
+    %
+    x = 1:m;
+    
+    % Усреднение
+    averData(1:length(h),1:m) = 0;
+    for i = 1:length(h)
+        for j = 1:m
+            K = 1 / (h(i) * sqrt(2 * pi)) .* exp( - ( j - x ).^2 ./ ( 2 * h(i)^2 ) );
+            averData(i, j) = sum( K .* data ) / sum(K);
+        end
+    end
 end
