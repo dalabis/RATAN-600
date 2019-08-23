@@ -2,12 +2,12 @@ clear
 close all
 
 %% read .fits file and header
-fileName = '011022sun0_out_edit.fits';
+fileName = '970105sun0_out_edit.fits';
 % data
 data = fitsread(fileName);
 % deliting bad frequencies
 badFreq = 2;
-data = data(:,:,3:end);
+data = data(:,:,1+badFreq:end);
 % header
 info = fitsinfo(fileName);
 
@@ -37,25 +37,59 @@ end
 % deleting bad frequencies
 freq = freq(1+badFreq:end);
 
-% transition from pixels to arcsec units
-CDELT = 4.9405;
-% solar radius, pix
-R = 964.2245912664 / CDELT;
-% solar center, pix
-CRPIX = 535.505615;
+% Чтение констант из заголовка fits. файла
+CDELT1Success = 0;
+CRPIX1Success = 0;
+SOLAR_RSuccess = 0;
+SOL_RASuccess = 0;
+SOL_DECSuccess = 0;
+i = 1;
+
+while (i <= size(info.PrimaryData.Keywords, 1)) && ~(CDELT1Success && CRPIX1Success && SOLAR_RSuccess && SOL_RASuccess && SOL_DECSuccess)  
+    if isequal(info.PrimaryData.Keywords{i,1}, 'CDELT1')
+        CDELT1 = info.PrimaryData.Keywords{i,2};
+        CDELT1Success = 1;
+    end
+    
+    if isequal(info.PrimaryData.Keywords{i,1}, 'CRPIX1')
+        CRPIX1 = info.PrimaryData.Keywords{i,2};
+        CRPIX1Success = 1;
+    end
+    
+    if isequal(info.PrimaryData.Keywords{i,1}, 'SOLAR_R')
+        SOLAR_R = info.PrimaryData.Keywords{i,2};
+        SOLAR_RSuccess = 1;
+    end
+    
+    if isequal(info.PrimaryData.Keywords{i,1}, 'SOL_RA')
+        SOL_RA = info.PrimaryData.Keywords{i,2};
+        SOL_RASuccess = 1;
+    end
+    
+    if isequal(info.PrimaryData.Keywords{i,1}, 'SOL_DEC')
+        SOL_DEC = info.PrimaryData.Keywords{i,2};
+        SOL_DECSuccess = 1;
+    end
+    
+    i = i + 1;
+
+end
+
+% Солнечный радиус из заголовка fits. файла (в пикселях)
+R = SOLAR_R / CDELT1;
 
 % Массивы значений частоты f и горизонтальной полуширины диаграммы 
 % направленности D
 % Массив взят из программы WorkScan
 f = [  0.985;   1.015;   1.045;   1.670;   1.760;   1.860;   1.950; ...
        2.050;   2.150;   2.270;   2.610;   2.720;   2.830;   2.950; ...
-       3.080;   3.210;   3.350;   3.670;   3.950;   4.270;   4.600; ...
+       3.080;   3.210;   3.350;   3.480;   3.670;   3.950;   4.270;   4.600; ...
        4.950;   5.700;   6.080;   6.500;   6.950;   7.350;   7.830; ...
        8.400;   8.750;   9.350;   9.800;  10.350;  10.950;  11.250; ...
       12.950;  13.400;  14.250;  14.750;  15.650;  16.400         ];
 D = [237.410; 235.200; 233.000; 188.000; 181.810; 174.940; 168.760; ...
      162.240; 156.070; 148.660; 128.680; 122.880; 117.090; 110.770; ...
-     104.660;  99.010;  92.930;  80.500;  70.770;  61.770;  53.580; ...
+     104.660;  99.010;  92.930;  87.280;  80.500;  70.770;  61.770;  53.580; ...
       46.550;  37.200;  33.250;  31.330;  29.270;  28.560;  27.910; ...
       27.420;  27.190;  26.730;  26.360;  25.740;  24.970;  24.500; ...
       21.580;  20.790;  19.330;  18.510;  17.290;  16.360         ];
@@ -107,7 +141,7 @@ end
    
 %%
 % Число итераций, число вписываемых гауссиан
-numGauss = 25;
+numGauss = 1;
 % Массив новых центров Солнца, на каждой частоте погоняется независимо
 CRPIXfreq(1:length(freq)) = 0;
 % Параметр гребневой регуляризации
@@ -123,7 +157,7 @@ DGauss(1:length(freq), 1:numGauss) = 0;
 
 for freqNum = 1:length(freq)
     [CRPIXfreq(freqNum), maxGauss(freqNum,:), AGauss(freqNum,:), DGauss(freqNum,:), Discr] = ...
-        SunCentering(data, CRPIX, R, freqNum, numGauss, alpha, Dfreq, sunShape, 'None');
+        SunCentering(data, CRPIX1, R, freqNum, numGauss, alpha, Dfreq, sunShape, 'None');
 end
 
 %%
