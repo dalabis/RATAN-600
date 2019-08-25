@@ -1,14 +1,13 @@
-function [CRPIX, maxGauss, AGauss, DGauss, currentDiscr] = SunCentering(data, CRPIX, R, freqNum, numGauss, alpha, Dfreq, sunShape, graphType)
+function [CRPIX, maxGauss, AGauss, DGauss, currentDiscr] = ...
+    SunCentering(data, CRPIX, freqNum, numGauss, alpha, convolutionTemplate, graphType, v)
 
-    t = -R:R;
-    % Инициальзация массивов, которые содержат параметры вписнных
-    % гауссиан
+    % Инициальзация массивов содержащих параметры вписанных гауссиан
     maxGauss(1:numGauss) = 0;
     AGauss(1:numGauss) = 0;
     DGauss(1:numGauss) = 0;
     
     % Сглаживание пиков
-    data(1,:,freqNum) = averaging(data(1,:,freqNum), Dfreq);
+    data(1,:,freqNum) = averaging(data(1,:,freqNum));
     
     for g = 0:numGauss
         % Инициальзация массивов, которые содержат параметры вписнных
@@ -18,8 +17,8 @@ function [CRPIX, maxGauss, AGauss, DGauss, currentDiscr] = SunCentering(data, CR
 
         for h = 1:g  
             %% Add
-            % Добавление h-ой гауссианы, полное колличество g на текущем
-            % шаге
+            % Добавление h-ой гауссианы, полное колличество g на текущей
+            % итерации
             
             % Поиск максимального значения в текущем массиве разности
             % скана и спокойного Солнца свернутого с ДНА + h-1 гауссиан с
@@ -92,14 +91,19 @@ function [CRPIX, maxGauss, AGauss, DGauss, currentDiscr] = SunCentering(data, CR
             % Методом наименьших квадратов с регулизационным параметром 
             % alpha (входной параметр)
             
-            % Свертка спокойного Солнца (уже свернутого с вертикальной ДНА)
-            % с горизонтальной диаграммой направленности
-            % Горизонтальная диаграмма направленности антенны
-            antennaPattern = @(x) exp( - x.^2 / ( 2 * (Dfreq(freqNum)/2.355)^2 ) );
-            % Свертка
+            % Шаблон спокойного Солнца
+            % Свертка ДНА с модельный спокойным Солнцем или запись
+            % спокойного Солнца
+            x = 1-CRPIX:1:size(data,2)-CRPIX;
             convolution(1:length(x)) = 0;
-            for j = 1:length(x)
-                convolution(j) = trapz(sunShape(:,freqNum)' .* antennaPattern(x(j)-t));
+            middle = round(length(convolution)/2);
+            middleTemplate = round(length(convolutionTemplate)/2);
+            shift = round(middle - CRPIX);
+            
+            if mod(length(x),2) == 1 && mod(length(middleTemplate),2) == 1
+                convolution = convolutionTemplate(middleTemplate-middle+1+shift:middleTemplate+middle-1+shift);
+            else
+                convolution = convolutionTemplate(middleTemplate-middle+1+shift:middleTemplate+middle+shift);
             end
             
             % Сумма всех h текущих гауссиан
@@ -126,9 +130,9 @@ function [CRPIX, maxGauss, AGauss, DGauss, currentDiscr] = SunCentering(data, CR
         % Функция discrepancy вычисляет относиельную разницу между сверткой
         % спокойного Солнца ДНА + h гауссиан и одномерным сканом
         newCRPIX = CRPIX;
-        currentDiscr = discrepancy(CRPIX, R, Dfreq, data, sunShape(:,freqNum), freqNum, maxGauss, AGauss, DGauss, alpha);
-        posStepDiscr = discrepancy(CRPIX+1, R, Dfreq, data, sunShape(:,freqNum), freqNum, maxGauss, AGauss, DGauss, alpha);
-        negStepDiscr = discrepancy(CRPIX-1, R, Dfreq, data, sunShape(:,freqNum), freqNum, maxGauss, AGauss, DGauss, alpha);
+        currentDiscr = discrepancy(CRPIX, data, convolutionTemplate, freqNum, maxGauss, AGauss, DGauss, alpha);
+        posStepDiscr = discrepancy(CRPIX+1, data, convolutionTemplate, freqNum, maxGauss, AGauss, DGauss, alpha);
+        negStepDiscr = discrepancy(CRPIX-1, data, convolutionTemplate, freqNum, maxGauss, AGauss, DGauss, alpha);
         
         % Движение происходит только в одном изначально выбранном
         % направлении
@@ -137,14 +141,14 @@ function [CRPIX, maxGauss, AGauss, DGauss, currentDiscr] = SunCentering(data, CR
             while posStepDiscr < currentDiscr
                 newCRPIX = newCRPIX + 1;
                 currentDiscr = posStepDiscr;
-                posStepDiscr = discrepancy(newCRPIX+1, R, Dfreq, data, sunShape(:,freqNum), freqNum, maxGauss, AGauss, DGauss, alpha);
+                posStepDiscr = discrepancy(newCRPIX+1, data, convolutionTemplate, freqNum, maxGauss, AGauss, DGauss, alpha);
             end
         % Движение влево, пока относительная разница не перестает меняться
         elseif negStepDiscr < currentDiscr
             while negStepDiscr < currentDiscr
                 newCRPIX = newCRPIX - 1;
                 currentDiscr = negStepDiscr;
-                negStepDiscr = discrepancy(newCRPIX-1, R, Dfreq, data, sunShape(:,freqNum), freqNum, maxGauss, AGauss, DGauss, alpha);
+                negStepDiscr = discrepancy(newCRPIX-1, data, convolutionTemplate, freqNum, maxGauss, AGauss, DGauss, alpha);
             end
         end
         
@@ -154,13 +158,19 @@ function [CRPIX, maxGauss, AGauss, DGauss, currentDiscr] = SunCentering(data, CR
 
         %% Plot
         % plot quiet Sun shape and RATAN scan with first gaussian
+        % Шаблон спокойного Солнца
+        % Свертка ДНА с модельный спокойным Солнцем или запись
+        % спокойного Солнца
         x = 1-CRPIX:1:size(data,2)-CRPIX;
-
-        antennaPattern = @(x) exp( - x.^2 / ( 2 * (Dfreq(freqNum)/2.355)^2 ) );
         convolution(1:length(x)) = 0;
-
-        for j = 1:length(x)
-            convolution(j) = trapz(sunShape(:,freqNum)' .* antennaPattern(x(j)-t));
+        middle = round(length(convolution)/2);
+        middleTemplate = round(length(convolutionTemplate)/2);
+        shift = round(middle - CRPIX);
+        
+        if mod(length(x),2) == 1 && mod(length(middleTemplate),2) == 1
+            convolution = convolutionTemplate(middleTemplate-middle+1+shift:middleTemplate+middle-1+shift);
+        else
+            convolution = convolutionTemplate(middleTemplate-middle+1+shift:middleTemplate+middle+shift);
         end
         
         if isequal(graphType, 'AllSteps')
@@ -207,6 +217,22 @@ function [CRPIX, maxGauss, AGauss, DGauss, currentDiscr] = SunCentering(data, CR
                 plot(x, coef.*convolution + gauss, '--')
                 plot(x, coef.*convolution)
                 plot(x, dif - gauss, '-')
+                
+                xlabel('Distance from Solar center, arcsec')
+                ylabel('Antenna temperature, K')
+                
+                axis tight
+                
+                % Создание кадра
+                frame = getframe(gcf);
+                
+                % Запись кадра в видеопоток
+                for j = 1:10
+                    writeVideo(v,frame);
+                end
+                
+                % Закрытие графического окна
+                close gcf
             end
         end
     end
@@ -215,20 +241,26 @@ end
 %% Discrepancy
 % Эта функция считает относительную разницу между сверткой спокойного
 % Солнца с ДНА + h гауссиан и одномерным сканом
-function discr = discrepancy(CRPIX, R, Dfreq, data, sunShape, freqNum, maxGauss, AGauss, DGauss, alpha)
+function discr = discrepancy(CRPIX, data, convolutionTemplate, freqNum, maxGauss, AGauss, DGauss, alpha)
+    % Шаблон спокойного Солнца
+    % Свертка ДНА с модельный спокойным Солнцем или запись
+    % спокойного Солнца
     x = 1-CRPIX:1:size(data,2)-CRPIX;
-    t = -R:R;
-    antennaPattern = @(x) exp( - x.^2 / ( 2 * (Dfreq(freqNum)/2.355)^2 ) );
     convolution(1:length(x)) = 0;
+    middle = round(length(convolution)/2);
+    middleTemplate = round(length(convolutionTemplate)/2);
+    shift = round(middle - CRPIX);
+    
+    if mod(length(x),2) == 1 && mod(length(middleTemplate),2) == 1
+        convolution = convolutionTemplate(middleTemplate-middle+1+shift:middleTemplate+middle-1+shift);
+    else
+        convolution = convolutionTemplate(middleTemplate-middle+1+shift:middleTemplate+middle+shift);
+    end
     
     % layer with gaussians
     gauss(1:length(x)) = 0;
     for j = 1:length(maxGauss)
         gauss = gauss + AGauss(j).*exp(-(x-maxGauss(j)+CRPIX).^2./(2.*DGauss(j).^2));
-    end
-    
-    for j = 1:length(x)
-        convolution(j) = trapz(sunShape' .* antennaPattern(x(j)-t));
     end
     
     A = convolution';
@@ -243,8 +275,8 @@ end
 %% Averaging
 % Эта функция строит непараметрическую регрессию с нормальным ядром
 % Так пики получаются более гладкими
-% Но ширину ядра нужно подбирать для каждой частоты отдельно (Можно связать с шириной ДНА, но почему то не работает)
-function averData = averaging(data, Dfreq)
+% Но ширину ядра нужно подбирать для каждой частоты отдельно (Можно связать с шириной ДНА)
+function averData = averaging(data)
     % Ширина окна
     h = 5;
     % Число отчетов

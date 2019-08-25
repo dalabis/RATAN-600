@@ -1,13 +1,23 @@
 clear
 close all
 
+% Тип шаблона спокойного Солнца
+% 'M' - модельный
+% 'T' - запись
+
+templateType = 'T';
+
 %% read .fits file and header
-fileName = '970105sun0_out_edit.fits';
+fileName = '20150715_121933_sun0_out_edit.fits';
 % data
 data = fitsread(fileName);
+% Нужно обрезать моменты включения генератора шума
+cutDataLeft = 200;
+cutDataRight = 200;
+data = data(:,1+cutDataLeft:end-cutDataRight,:);
 % deliting bad frequencies
-badFreq = 2;
-data = data(:,:,1+badFreq:end);
+badFreq = 7;
+%data = data(:,:,1+badFreq:end);
 % header
 info = fitsinfo(fileName);
 
@@ -16,26 +26,30 @@ endSuccess = 0;
 commentSuccess = 0;
 freqNum = 1;
 counter = 1;
-while ~endSuccess
-    if isequal(info.PrimaryData.Keywords{counter, 1}, 'COMMENT')
-        commentSuccess = 1;
-    end
-    
-    if isequal(info.PrimaryData.Keywords{counter+1, 1}, 'END')
-        endSuccess = 1;
-    end
-    
-    counter = counter + 1;
-    
-    if commentSuccess == 1 && endSuccess == 0
-        freq(freqNum) = info.PrimaryData.Keywords{counter, 2};
-        
-        freqNum = freqNum + 1;
-    end
-end
+try
+    while ~endSuccess
+        if isequal(info.PrimaryData.Keywords{counter, 1}, 'COMMENT')
+            commentSuccess = 1;
+        end
 
-% deleting bad frequencies
-freq = freq(1+badFreq:end);
+        if isequal(info.PrimaryData.Keywords{counter+1, 1}, 'END')
+            endSuccess = 1;
+        end
+
+        counter = counter + 1;
+
+        if commentSuccess == 1 && endSuccess == 0
+            freq(freqNum) = info.PrimaryData.Keywords{counter, 2};
+
+            freqNum = freqNum + 1;
+        end
+    end
+
+    % deleting bad frequencies
+    freq = freq(1+badFreq:end);
+catch exeption
+    freq = 1:size(data,3)-badFreq;
+end
 
 % Чтение констант из заголовка fits. файла
 CDELT1Success = 0;
@@ -45,7 +59,7 @@ SOL_RASuccess = 0;
 SOL_DECSuccess = 0;
 i = 1;
 
-while (i <= size(info.PrimaryData.Keywords, 1)) && ~(CDELT1Success && CRPIX1Success && SOLAR_RSuccess && SOL_RASuccess && SOL_DECSuccess)  
+while (i <= size(info.PrimaryData.Keywords, 1)) && ~(CDELT1Success && CRPIX1Success && SOLAR_RSuccess && SOL_RASuccess && SOL_DECSuccess)
     if isequal(info.PrimaryData.Keywords{i,1}, 'CDELT1')
         CDELT1 = info.PrimaryData.Keywords{i,2};
         CDELT1Success = 1;
@@ -76,72 +90,89 @@ while (i <= size(info.PrimaryData.Keywords, 1)) && ~(CDELT1Success && CRPIX1Succ
 end
 
 % Солнечный радиус из заголовка fits. файла (в пикселях)
-R = SOLAR_R / CDELT1;
+R = 1.1*SOLAR_R / CDELT1;
 
-% Массивы значений частоты f и горизонтальной полуширины диаграммы 
-% направленности D
-% Массив взят из программы WorkScan
-f = [  0.985;   1.015;   1.045;   1.670;   1.760;   1.860;   1.950; ...
-       2.050;   2.150;   2.270;   2.610;   2.720;   2.830;   2.950; ...
-       3.080;   3.210;   3.350;   3.480;   3.670;   3.950;   4.270;   4.600; ...
-       4.950;   5.700;   6.080;   6.500;   6.950;   7.350;   7.830; ...
-       8.400;   8.750;   9.350;   9.800;  10.350;  10.950;  11.250; ...
-      12.950;  13.400;  14.250;  14.750;  15.650;  16.400         ];
-D = [237.410; 235.200; 233.000; 188.000; 181.810; 174.940; 168.760; ...
-     162.240; 156.070; 148.660; 128.680; 122.880; 117.090; 110.770; ...
-     104.660;  99.010;  92.930;  87.280;  80.500;  70.770;  61.770;  53.580; ...
-      46.550;  37.200;  33.250;  31.330;  29.270;  28.560;  27.910; ...
-      27.420;  27.190;  26.730;  26.360;  25.740;  24.970;  24.500; ...
-      21.580;  20.790;  19.330;  18.510;  17.290;  16.360         ];
+if templateType == 'M'
+    % Массивы значений частоты f и горизонтальной полуширины диаграммы 
+    % направленности D
+    % Массив взят из программы WorkScan
+    f = [  0.985;   1.015;   1.045;   1.670;   1.760;   1.860;   1.950; ...
+           2.050;   2.150;   2.270;   2.610;   2.720;   2.830;   2.950; ...
+           3.080;   3.210;   3.350;   3.480;   3.670;   3.950;   4.270;   4.600; ...
+           4.950;   5.700;   6.080;   6.500;   6.950;   7.350;   7.830; ...
+           8.400;   8.750;   9.350;   9.800;  10.350;  10.950;  11.250; ...
+          12.950;  13.400;  14.250;  14.750;  15.650;  16.400         ];
+    D = [237.410; 235.200; 233.000; 188.000; 181.810; 174.940; 168.760; ...
+         162.240; 156.070; 148.660; 128.680; 122.880; 117.090; 110.770; ...
+         104.660;  99.010;  92.930;  87.280;  80.500;  70.770;  61.770;  53.580; ...
+          46.550;  37.200;  33.250;  31.330;  29.270;  28.560;  27.910; ...
+          27.420;  27.190;  26.730;  26.360;  25.740;  24.970;  24.500; ...
+          21.580;  20.790;  19.330;  18.510;  17.290;  16.360         ] / CDELT1;
 
-% Эта часть находит массив горизонтальной полуширины диаграммы
-% направленности Dfreq соответсвующий массиву частот считанному из
-% fits. файла
-Dfreq(1:length(freq)) = 0;
-j = 1;
-for i = 1:length(f)
-    if j <= length(freq) && freq(j) == f(i)
-        Dfreq(j) = D(i);
-        
-        j = j + 1;
-    end
-end
+    % Эта часть находит массив горизонтальной полуширины диаграммы
+    % направленности Dfreq соответсвующий массиву частот считанному из
+    % fits. файла
+    Dfreq(1:length(freq)) = 0;
+    j = 1;
+    for i = 1:length(f)
+        if j <= length(freq) && freq(j) == f(i)
+            Dfreq(j) = D(i);
 
-% Получение массива вертикальной полуширины диаграммы направленности 
-% DVertFreq
-% Интерполяция взята сайта spbf.sao
-DVertFreq = 225./freq;
-
-% Эта часть строит модельное изображение Солнца в виде квадратной
-% матрицы, которая имеет размер равный двум солнечным радиусам
-% Солнце имеет форму круга с одинаковой интенсивностью равной 1
-sun(1:fix(2*R)+1,1:fix(2*R)+1) = 0;
-% Центр круга совпадает с центром матрицы
-for i = 1:2*R+1
-    for j = 1:2*R+1
-        if sqrt( (i-R+1)^2 + (j-R+1)^2 ) <= R
-            sun(i,j) = 1;
+            j = j + 1;
         end
     end
-end
 
-% 
-t = -R:R;
-% Инициализация cвертки Солнца с вертикальной диаграммой направленности
-sunShape(1:fix(2*R)+1,1:length(freq)) = 0;
+    % Получение массива вертикальной полуширины диаграммы направленности 
+    % DVertFreq
+    % Интерполяция взята сайта spbf.sao
+    DVertFreq = 225./freq.*60;
 
-% Свертка Солнца с вертикальной диаграммой направленности
-for j = 1:length(freq)
-    vertAntennaPattern = @(x) exp( - x.^2 / ( 2 * (DVertFreq(j)/2.355)^2 ) );
-    
-    for i = 1:2*R+1
-        sunShape(i,j) = sum( sun(:,i)' .* vertAntennaPattern(t) );
+    % Эта часть строит модельное изображение Солнца в виде квадратной
+    % матрицы, которая имеет размер равный двум солнечным радиусам
+    % Солнце имеет форму круга с одинаковой интенсивностью равной 1
+    sun(1:4*R,1:4*R) = 0;
+
+    % Центр круга совпадает с центром матрицы
+    for i = 1:4*R
+        for j = 1:4*R
+            if sqrt( (i-2*R+1)^2 + (j-2*R+1)^2 ) <= R
+                sun(i,j) = 1;
+            end
+        end
     end
+
+    % 
+    t = -2*R+1:2*R;
+    % Инициализация cвертки Солнца с вертикальной диаграммой направленности
+    sunShape(1:4*R,1:length(freq)) = 0;
+
+    % Свертка Солнца с вертикальной диаграммой направленности
+    for j = 1:length(freq)
+        vertAntennaPattern = @(x) exp( - x.^2 / ( 2 * (DVertFreq(j)/2.355)^2 ) );
+
+        for i = 1:4*R
+            sunShape(i,j) = sum( sun(:,i)' .* vertAntennaPattern(t) );
+        end
+    end
+
+    % Свертка Солнца с горизонтальной диаграммой направленности
+    x = 1:4096;
+    convolution(1:length(freq),1:length(x)) = 0;
+
+    for freqNum = 1:length(freq)
+        antennaPattern = @(x) exp( - (x - length(x)/2).^2 / ( 2 * (Dfreq(freqNum)/2.355)^2 ) );
+
+        for j = 1:4*R
+            convolution(freqNum,fix(j+length(x)/2 - 2*R)) = trapz(sunShape(:,freqNum)' .* antennaPattern(x(j)-t));
+        end
+    end
+elseif templateType == 'T'
+    convolution = fitsread('QuietSun201902\template.fits')';
 end
-   
+
 %%
 % Число итераций, число вписываемых гауссиан
-numGauss = 1;
+numGauss = 8;
 % Массив новых центров Солнца, на каждой частоте погоняется независимо
 CRPIXfreq(1:length(freq)) = 0;
 % Параметр гребневой регуляризации
@@ -155,13 +186,20 @@ AGauss(1:length(freq), 1:numGauss) = 0;
 % Полуширина
 DGauss(1:length(freq), 1:numGauss) = 0;
 
+% Создание видеопотока
+v = VideoWriter('peaks.avi');
+open(v)
+
 for freqNum = 1:length(freq)
     [CRPIXfreq(freqNum), maxGauss(freqNum,:), AGauss(freqNum,:), DGauss(freqNum,:), Discr] = ...
-        SunCentering(data, CRPIX1, R, freqNum, numGauss, alpha, Dfreq, sunShape, 'None');
+        SunCentering(data, CRPIX1-cutDataLeft, freqNum+badFreq, numGauss, alpha, convolution(freqNum,:), 'None', v);
 end
 
+close(v)
+
 %%
-% спектр без обработки
+% Сортировка гауссиан
+% Спектр без обработки
 figure
 hold on
 for i = 1:numGauss
@@ -216,7 +254,7 @@ maxGauss2(1, 1:numGauss) = maxGauss1(1, :);
 % максимально допустимое значение отклонения максимума междусоседними
 % частотами, если отклонение меньше допустимого не найдено, то значение
 % записывается как новый источник
-trig = 30;
+trig = 10;
 % размер нового массива
 size2 = numGauss;
 
@@ -227,10 +265,12 @@ for i = 2:length(freq1)
         min = trig;
         minInd = 0;
         
-        for k = 1:size1
-            if k ~= j && abs(maxGauss2(i-1, k) - maxGauss1(i, j)) < min
-                min = abs(maxGauss2(i-1, k) - maxGauss1(i, j));
-                minInd = k;
+        for l = 1:i-1
+            for k = 1:size1
+                if abs(maxGauss2(l, k) - maxGauss1(i, j)) < min
+                    min = abs(maxGauss2(l, k) - maxGauss1(i, j));
+                    minInd = k;
+                end
             end
         end
         
@@ -246,30 +286,63 @@ for i = 2:length(freq1)
         end
     end
     
-    for j = 1:size2
-        if AGauss2(i,j) == 0
-            AGauss2(i,j) = AGauss2(i-1,j);
-            DGauss2(i,j) = DGauss2(i-1,j);
-            maxGauss2(i,j) = maxGauss2(i-1,j);
+    %for j = 1:size2
+    %    if AGauss2(i,j) == 0
+    %        AGauss2(i,j) = AGauss2(i-1,j);
+    %        DGauss2(i,j) = DGauss2(i-1,j);
+    %        maxGauss2(i,j) = maxGauss2(i-1,j);
+    %    end
+    %end
+end
+
+for i = 1:size(AGauss2,2)
+    k = 1;
+    
+    for j = 1:size(AGauss2,1)
+        if AGauss2(j, i) ~= 0
+            AGauss3{i}(k) = AGauss2(j, i);
+            DGauss3{i}(k) = DGauss2(j, i);
+            maxGauss3{i}(k) = maxGauss2(j, i);
+            freq3{i}(k) = j;
+            
+            k = k + 1;
         end
     end
 end
+
+figure
+hold on
+
+% Ограничение на длину спектра (колличество точек)
+lengthTrig = 15;
+
+for i = 1:size1
+    if length(freq3{i}) > lengthTrig
+        plot(freq3{i}, maxGauss3{i})
+    end
+end
+xlabel('Номер частоты')
+ylabel('Положение максимума, pix')
+
 figure
 hold on
 for i = 1:size1
-    plot(freq2, maxGauss2(:,i))
+    if length(freq3{i}) > lengthTrig
+        plot(freq3{i}, AGauss3{i})
+    end
 end
+xlabel('Номер частоты')
+ylabel('Значение максимума, К')
+
 figure
 hold on
 for i = 1:size1
-    plot(freq2, AGauss2(:,i))
-    ylim([0 20000])
+    if length(freq3{i}) > lengthTrig
+        plot(freq3{i}, DGauss3{i})
+    end
 end
-figure
-hold on
-for i = 1:size1
-    plot(freq2, DGauss2(:,i))
-end
+xlabel('Номер частоты')
+ylabel('Полуширина, pix')
 
 %%
 
