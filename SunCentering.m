@@ -8,6 +8,7 @@ function [CRPIX, maxGauss, AGauss, DGauss, currentDiscr] = ...
     
     % Сглаживание пиков
     data(1,:,freqNum) = averaging(data(1,:,freqNum));
+    data(1,:,freqNum) = data(1,:,freqNum) - min(data(1,:,freqNum));
     
     for g = 0:numGauss
         % Инициальзация массивов, которые содержат параметры вписнных

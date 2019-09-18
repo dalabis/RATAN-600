@@ -8,7 +8,7 @@ close all
 templateType = 'T';
 
 %% read .fits file and header
-fileName = '20150715_121933_sun0_out_edit.fits';
+fileName = '20190215_122746_sun+0_edit.fits';
 % data
 data = fitsread(fileName);
 % Нужно обрезать моменты включения генератора шума
@@ -16,7 +16,7 @@ cutDataLeft = 200;
 cutDataRight = 200;
 data = data(:,1+cutDataLeft:end-cutDataRight,:);
 % deliting bad frequencies
-badFreq = 7;
+badFreq = 8;
 %data = data(:,:,1+badFreq:end);
 % header
 info = fitsinfo(fileName);
@@ -172,7 +172,7 @@ end
 
 %%
 % Число итераций, число вписываемых гауссиан
-numGauss = 8;
+numGauss = 3;
 % Массив новых центров Солнца, на каждой частоте погоняется независимо
 CRPIXfreq(1:length(freq)) = 0;
 % Параметр гребневой регуляризации
