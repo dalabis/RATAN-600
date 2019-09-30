@@ -2,6 +2,8 @@ import numpy as np
 from PIL import Image
 from astropy.io import fits
 import cv2 as cv
+import matplotlib.pyplot as plt
+from scipy import stats
 
 
 def low_intensity_regions_map(hdul):
@@ -124,32 +126,118 @@ def low_intensity_regions_map(hdul):
                     dataCart[X[i, j], Y[i, j]] != LIR_thrash:
                 LIR_binary[x0 - x[i, j], y0 - y[i, j]] = 1
 
+    # Морфологическое открытие и закрытие, чтобы уменьшить количество контуров.
+    LIR_binary = cv.morphologyEx(LIR_binary,
+                                 cv.MORPH_OPEN,
+                                 cv.getStructuringElement(cv.MORPH_ELLIPSE,
+                                                          (10, 10)))
+    LIR_binary = cv.morphologyEx(LIR_binary,
+                                 cv.MORPH_CLOSE,
+                                 cv.getStructuringElement(cv.MORPH_ELLIPSE,
+                                                          (10, 10)))
+
     LIR_binary = LIR_binary.astype('uint8')
     contours, _ = cv.findContours(LIR_binary,
-                                  cv.RETR_TREE,
+                                  cv.RETR_LIST,
                                   cv.CHAIN_APPROX_SIMPLE)
 
-    return contours
+    return contours, np.shape(dataSphere)
 
 
-fits_image_filename = 'saia_00193_fd_20190705_232152.fts'  # Имя файла
-hdul = fits.open(fits_image_filename)
+def coronal_holes_map(low_intensity_contours,
+                      low_intensity_shape,
+                      hdul):
 
-low_intensity_regions = low_intensity_regions_map(hdul)
+    data_hmi = hdul[0].data
+    # Маска с текущей областью пониженной интенсивности LIR
+    mask_lir = np.zeros(low_intensity_shape)
+    # Маска с текущей областью пониженной интенсивности LIR с новыми
+    # размерами магнитограммы hmi
+    mask_hmi = np.zeros(np.shape(data_hmi))
+    # Максимальное значение магнитного поля
+    data_max = np.round(np.amax(data_hmi)).astype(int)
+    # Гистограмма магнитного поля
+    # hist_hmi = np.zeros(2 * data_max + 1)
+    # Контуры корональных дыр CH (Coronal Holes)
+    coronal_holes_contours = []
+
+    fig = plt.subplots()
+    # создаём область, в которой будет
+    # - отображаться график
+    x = np.linspace(-25, 25, 100)
+    # значения x, которые будут отображены
+    # количество элементов в созданном массиве
+
+    for contour in low_intensity_contours:
+        mask_lir[:] = 0
+        mask_lir = cv.fillPoly(mask_lir,
+                               pts=[contour],
+                               color=1)
+        mask_hmi = cv.resize(mask_lir,
+                             np.shape(data_hmi),
+                             interpolation=cv.INTER_AREA)
+
+        hist_hmi, _ = np.histogram(mask_hmi * data_hmi,
+                                   np.linspace(-25, 25, 101))
+        # hist_hmi[25] = (hist_hmi[24] + hist_hmi[26]) / 2
+        # if np.abs(np.sum(hist_hmi[:300-1]) - np.sum(hist_hmi[300+1:])) >\
+        #        0.05 * (np.sum(hist_hmi[:300-1]) + np.sum(hist_hmi[300+1:])):
+        #    coronal_holes_contours.append(contour)
+
+        skew = stats.skew(hist_hmi)
+        print(skew)
+
+        # рисуем график
+        plt.plot(x, hist_hmi)
+
+    # показываем график
+    plt.show()
+
+    return coronal_holes_contours
+
+
+xray_fits_image_filename = 'saia_00193_fd_20150715_233641.fts'  # Имя файла
+hdul_xray = fits.open(xray_fits_image_filename)
+
+low_intensity_contours, low_intensity_shape = low_intensity_regions_map(
+    hdul_xray)
 
 # Формирование цветного RGB изображения
-image = Image.fromarray(hdul[0].data)
+image = Image.fromarray(hdul_xray[0].data)
 image = image.convert('RGB')
 image = np.asarray(image, dtype="int32")
 
 # Добавление границ корональных дыр на изображение
 image = cv.drawContours(cv.UMat(image),
-                        low_intensity_regions,
+                        low_intensity_contours,
                         -1,
                         (0, 0, 255),
                         1)
 
 # Сохранение изображения
-cv.imwrite("test.jpg", image)
+cv.imwrite("LIR.jpg", image)
 
-hdul.close()
+hmi_fits_image_filename = 'shmi_maglc_fd_20150715_185824.fts'  # Имя файла
+hdul_hmi = fits.open(hmi_fits_image_filename)
+
+coronal_holes_contours = coronal_holes_map(low_intensity_contours,
+                                           low_intensity_shape,
+                                           hdul_hmi)
+
+# Формирование цветного RGB изображения
+image = Image.fromarray(hdul_xray[0].data)
+image = image.convert('RGB')
+image = np.asarray(image, dtype="int32")
+
+# Добавление границ корональных дыр на изображение
+image = cv.drawContours(cv.UMat(image),
+                        coronal_holes_contours,
+                        -1,
+                        (0, 0, 255),
+                        1)
+
+# Сохранение изображения
+cv.imwrite("CH.jpg", image)
+
+hdul_xray.close()
+hdul_hmi.close()
