@@ -1,8 +1,9 @@
 # RATAN-600
 Автоматический гаусс анализ
 
-Описание алгоритма:
+*Описание алгоритма:
 
+```{r, tidy=FALSE, eval=FALSE, highlight=FALSE }
 Required: 
     data - одномерный скан,
     template – шаблон спокойного Солнца
@@ -34,4 +35,17 @@ def get_gaussian_parameters(Data, Template, num_gauss)
 
 * функция LeastSQ подбирает коэффициент масштабирующий шаблон спокойного Солнца так, чтобы разница со сканом и вписанными гауссианами была наименьшей
 ** функция add_gauss вписывает одну гауссиану, в качестве максимума гауссианы она берет максимальное значение массива dif
+```
 
+*Пример работы:
+
+Визуализация
+![GitHub Logo](images/writer_test.gif)
+
+Спектры гауссиан
+![GitHub Logo](images/20150715_121933_sun0_out_pos.png)
+![GitHub Logo](images/20150715_121933_sun0_out_amp.png)
+![GitHub Logo](images/20150715_121933_sun0_out_FWHM.png)
+
+Суммарная ошибка
+![GitHub Logo](images/20150715_121933_sun0_out_error.png)
